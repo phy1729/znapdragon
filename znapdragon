@@ -1,0 +1,94 @@
+#!/bin/sh
+
+# Name of zpool and dataset to recursively snapshot
+ZPOOL=${ZPOOL:-"zroot"}
+ZROOT=${ZROOT:-"srv"}
+
+# Number of each type of snapshot to keep (0 means keep as many as space permits)
+FIVEMIN=24 # 2 hours
+HOUR=48    # 2 days
+DAY=14     # 2 weeks
+WEEK=9     # 2 months
+MONTH=0    # As many as space permits
+
+# Day of week for weekly snapshots (0-6 Sun-Sat)
+WEEKLY_DOW=0 # Sunday
+
+# Max percent usage of whole pool not just of snapshots
+USAGE=75 # Percent
+
+# End user settable constants
+
+fivemincount=0
+hourcount=0
+daycount=0
+weekcount=0
+monthcount=0
+# List of snapshots marked keep as many as possible. X marks the end of the list.
+deletable="X"
+
+# Returns 0-6 for Sunday through Saturday. $1 should be in the format YYYY-MM-DD.
+dayofweek() {
+	local year month day
+	year=${1%%-*}
+	month=${1#*-}
+	month=${month%%-*}
+	day=${1##*-}
+
+	month=${month#0}
+	day=${day#0}
+
+	: $(( month-=2 ))
+	[ $month -le 0 ] && : $(( month+=12 )) && : $(( year-=1 ))
+	echo $(( (day + (26*month - 2)/10 + 5*(year%4) + 4*(year%100) + 6*(year%400) )%7 ))
+}
+
+# First make the new snapshot
+zfs snapshot -r "$ZPOOL/$ZROOT@$(date +%Y-%m-%dT%H:%M)" || \
+	{ echo >&2 "Could not make recursive snapshot of $ZPOOL/$ZROOT! Exiting." && exit 1; }
+
+# Then prune existing snapshots
+while IFS= read -r snap; do
+	delete=0
+	snap="${snap##*@}"
+
+	# Verify this is a snapshot we made
+	case $snap in
+		[2-9][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]T[012][0-9]:[0-5][05]) :;;
+		*) continue;;
+	esac
+
+	[ $FIVEMIN -eq 0 ] && deletable="$snap $deletable" && continue
+	[ $fivemincount -lt $FIVEMIN ] && : $(( fivemincount+=1 )) && delete=1
+	if [ "${snap##*:}" = "00" ]; then
+		[ $HOUR -eq 0 ] && deletable="$snap $deletable" && continue
+		[ $hourcount -lt $HOUR ] && : $(( hourcount+=1 )) && delete=1
+		if [ "${snap#*T}" = "00:00" ]; then
+			[ $DAY -eq 0 ] && deletable="$snap $deletable" && continue
+			[ $daycount -lt $DAY ] && : $(( daycount+=1 )) && delete=1
+			if [ "$(dayofweek "${snap%%T*}")" -eq $WEEKLY_DOW ]; then
+				[ $WEEK -eq 0 ] && deletable="$snap $deletable" && delete=1
+				[ $weekcount -lt $WEEK ] && : $(( weekcount+=1 )) && delete=1
+			fi
+			if [ "${snap%%*-}" = "01T00:00" ]; then
+				[ $MONTH -eq 0 ] && deletable="$snap $deletable" && continue
+				[ $monthcount -lt $MONTH ] && : $(( monthcount+=1 )) && continue
+			fi
+		fi
+	fi
+
+	[ $delete -eq 0 ] && zfs destroy -dr "$ZPOOL/$ZROOT@$snap"
+done <<EOF
+$(zfs list -d 1 -t snapshot -Hpo name -S name "$ZPOOL/$ZROOT")
+EOF
+
+# Delete old snapshots until under $USAGE.
+# $deletable is already sorted oldest first, so just delete in order.
+for snap in $deletable; do
+	[ "$(zpool get -Hpo value capacity "$ZPOOL")" -le $USAGE ] && exit
+	if [ "$snap" = X ]; then # Reached the end of the list
+		echo >&2 "zpool $ZPOOL usage is over $USAGE%, but there are no deletable snapshots!"
+	else
+		zfs destroy -dr "$ZPOOL/$ZROOT@$snap"
+	fi
+done
