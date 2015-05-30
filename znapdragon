@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# These variables are not sanity checked, so get them right!
+
 # Name of zpool and dataset to recursively snapshot
 ZPOOL=${ZPOOL:-"zroot"}
 ZROOT=${ZROOT:-"srv"}
