@@ -43,8 +43,15 @@ dayofweek() {
 	echo $(( (day + (26*month - 2)/10 + 5*(year%4) + 4*(year%100) + 6*(year%400) )%7 ))
 }
 
+date="$(date +%Y-%m-%dT%H:%M)"
+# Check that date returned something sane
+case $date in
+	[2-9][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]T[012][0-9]:[0-5][05]) :;;
+	*) echo >&2 "date returned nonsense ($date)! Exiting." && exit 2;;
+esac
+
 # First make the new snapshot
-zfs snapshot -r "$ZPOOL/$ZROOT@$(date +%Y-%m-%dT%H:%M)" || \
+zfs snapshot -r "$ZPOOL/$ZROOT@$date" || \
 	{ echo >&2 "Could not make recursive snapshot of $ZPOOL/$ZROOT! Exiting." && exit 1; }
 
 # Then prune existing snapshots
