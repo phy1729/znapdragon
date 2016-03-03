@@ -3,8 +3,8 @@
 # These variables are not sanity checked, so get them right!
 
 # Name of zpool and dataset to recursively snapshot
-ZPOOL=${ZPOOL:-"zroot"}
-ZROOT=${ZROOT:-"srv"}
+dataset=${dataset:-"zroot/srv"}
+zroot=${dataset%%/*}
 
 # Number of each type of snapshot to keep (0 means keep as many as space permits)
 FIVEMIN=24 # 2 hours
@@ -52,8 +52,8 @@ case $date in
 esac
 
 # First make the new snapshot
-zfs snapshot -r "$ZPOOL/$ZROOT@$date" || \
-	{ echo >&2 "Could not make recursive snapshot of $ZPOOL/$ZROOT! Exiting." && exit 1; }
+zfs snapshot -r "$dataset@$date" || \
+	{ echo >&2 "Could not make recursive snapshot of $dataset! Exiting." && exit 1; }
 
 # Then prune existing snapshots
 while IFS= read -r snap; do
@@ -85,18 +85,18 @@ while IFS= read -r snap; do
 		fi
 	fi
 
-	[ $delete -eq 0 ] && zfs destroy -dr "$ZPOOL/$ZROOT@$snap"
+	[ $delete -eq 0 ] && zfs destroy -dr "$dataset@$snap"
 done <<EOF
-$(zfs list -d 1 -t snapshot -Hpo name -S name "$ZPOOL/$ZROOT")
+$(zfs list -d 1 -t snapshot -Hpo name -S name "$dataset")
 EOF
 
 # Delete old snapshots until under $USAGE.
 # $deletable is already sorted oldest first, so just delete in order.
 for snap in $deletable; do
-	[ "$(zpool get -Hpo value capacity "$ZPOOL")" -le $USAGE ] && exit
+	[ "$(zpool get -Hpo value capacity "$zpool")" -le $USAGE ] && exit
 	if [ "$snap" = X ]; then # Reached the end of the list
-		echo >&2 "zpool $ZPOOL usage is over $USAGE%, but there are no deletable snapshots!"
+		echo >&2 "zpool $zpool usage is over $USAGE%, but there are no deletable snapshots!"
 	else
-		zfs destroy -dr "$ZPOOL/$ZROOT@$snap"
+		zfs destroy -dr "$dataset@$snap"
 	fi
 done
