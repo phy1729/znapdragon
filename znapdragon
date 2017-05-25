@@ -93,7 +93,11 @@ EOF
 # Delete old snapshots until under $USAGE.
 # $deletable is already sorted oldest first, so just delete in order.
 for snap in $deletable; do
-	[ "$(zpool get -Hpo value capacity "$ZPOOL")" -le $USAGE ] && exit
+	capacity="$(zpool get -Hp capacity "$ZPOOL")"
+	capacity="${capacity%\%*}"
+	capacity="${capacity##* }"
+
+	[ "$capacity" -le $USAGE ] && exit
 	if [ "$snap" = X ]; then # Reached the end of the list
 		echo >&2 "zpool $ZPOOL usage is over $USAGE%, but there are no deletable snapshots!"
 	else
