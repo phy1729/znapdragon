@@ -31,7 +31,6 @@ deletable="X"
 
 # Returns 0-6 for Sunday through Saturday. $1 should be in the format YYYY-MM-DD.
 dayofweek() {
-	local year month day
 	year=${1%%-*}
 	month=${1#*-}
 	month=${month%%-*}
